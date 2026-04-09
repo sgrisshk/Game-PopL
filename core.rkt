@@ -48,7 +48,7 @@
 
 ;; Regular coordinate struct (x, y).
 (define-struct pos [x y])
-;; A Pos is (make-pos Natural Natural)
+;; A Pos is (make-pos Integer Integer)
 ;; interpretation: coordinate on the grid,
 ;; x = column index, y = row index.
 
@@ -165,10 +165,10 @@
 ;; interpretation: complete (immutable) state:
 ;; map, player, and current game status.
 
-(define WORLD-EXAMPLE-1
+(define WORLD-1
   (make-world GRID-1 PLAYER-1 PLAYING))
 
-(define WORLD-EXAMPLE-2
+(define WORLD-2
   (make-world GRID-2 PLAYER-2 WON))
 
 ;; World -> ...
@@ -178,3 +178,145 @@
   (... (grid-template (world-grid w))
        (player-template (world-player w))
        (status-template (world-status w))))
+
+
+
+;; Movement
+
+
+;; Movement test data:
+;; The player starts at (1,1), can move right to floor, and cannot move into walls.
+(define MOVE-TEST-GRID
+  (list
+   (list WALL WALL WALL)
+   (list WALL FLOOR FLOOR)
+   (list WALL WALL WALL)))
+
+(define MOVE-TEST-WORLD
+  (make-world MOVE-TEST-GRID
+              (make-player (make-pos 1 1) 0)
+              PLAYING))
+
+(define MOVE-TEST-WORLD-RIGHT
+  (make-world MOVE-TEST-GRID
+              (make-player (make-pos 2 1) 0)
+              PLAYING))
+
+
+;; movement-key? : KeyEvent -> Boolean
+;; purpose: check if a key event is one of the 4 movement arrows.
+;; examples:
+;; (movement-key? "left")  => #true
+;; (movement-key? "a")     => #false
+(check-expect (movement-key? "left") #true)
+(check-expect (movement-key? "up") #true)
+(check-expect (movement-key? "a") #false)
+
+(define (movement-key? ke)
+  (or (string=? ke "up")
+      (string=? ke "down")
+      (string=? ke "left")
+      (string=? ke "right")))
+
+
+;; next-pos : Pos KeyEvent -> Pos
+;; purpose: produce the next position from a position and arrow key.
+;; If the key is not an arrow key, return the same position.
+;; examples:
+;; (next-pos (make-pos 2 2) "up")    => (make-pos 2 1)
+;; (next-pos (make-pos 2 2) "right") => (make-pos 3 2)
+(check-expect (next-pos (make-pos 2 2) "up") (make-pos 2 1))
+(check-expect (next-pos (make-pos 2 2) "down") (make-pos 2 3))
+(check-expect (next-pos (make-pos 2 2) "left") (make-pos 1 2))
+(check-expect (next-pos (make-pos 2 2) "right") (make-pos 3 2))
+(check-expect (next-pos (make-pos 2 2) "x") (make-pos 2 2))
+
+(define (next-pos p ke)
+  (cond
+    [(string=? ke "up") (make-pos (pos-x p) (sub1 (pos-y p)))]
+    [(string=? ke "down") (make-pos (pos-x p) (add1 (pos-y p)))]
+    [(string=? ke "left") (make-pos (sub1 (pos-x p)) (pos-y p))]
+    [(string=? ke "right") (make-pos (add1 (pos-x p)) (pos-y p))]
+    [else p]))
+
+
+;; in-grid? : Grid Pos -> Boolean
+;; purpose: check whether a position is inside grid bounds.
+;; examples:
+;; (in-grid? MOVE-TEST-GRID (make-pos 2 1)) => #true
+;; (in-grid? MOVE-TEST-GRID (make-pos 3 1)) => #false
+(check-expect (in-grid? MOVE-TEST-GRID (make-pos 2 1)) #true)
+(check-expect (in-grid? MOVE-TEST-GRID (make-pos 3 1)) #false)
+(check-expect (in-grid? MOVE-TEST-GRID (make-pos -1 1)) #false)
+
+(define (in-grid? g p)
+  (and (not (empty? g))
+       (<= 0 (pos-x p))
+       (<= 0 (pos-y p))
+       (< (pos-y p) (length g))
+       (< (pos-x p) (length (first g)))))
+
+
+;; nth-item : [NEList-of X] Natural -> X
+;; purpose: return the n-th item (0-based) from a non-empty list.
+;; examples:
+;; (nth-item (list "a" "b" "c") 0) => "a"
+;; (nth-item (list "a" "b" "c") 2) => "c"
+(check-expect (nth-item (list "a" "b" "c") 0) "a")
+(check-expect (nth-item (list "a" "b" "c") 2) "c")
+
+(define (nth-item l n)
+  (cond
+    [(zero? n) (first l)]
+    [else (nth-item (rest l) (sub1 n))]))
+
+
+;; tile-at : Grid Pos -> Tile
+;; purpose: get the tile value at a position.
+;; examples:
+;; (tile-at MOVE-TEST-GRID (make-pos 1 1)) => FLOOR
+;; (tile-at MOVE-TEST-GRID (make-pos 0 1)) => WALL
+(check-expect (tile-at MOVE-TEST-GRID (make-pos 1 1)) FLOOR)
+(check-expect (tile-at MOVE-TEST-GRID (make-pos 0 1)) WALL)
+
+(define (tile-at g p)
+  (nth-item (nth-item g (pos-y p)) (pos-x p)))
+
+
+;; valid-move? : World Pos -> Boolean
+;; purpose: check if a move target is inside the grid and not a wall tile.
+;; examples:
+;; (valid-move? MOVE-TEST-WORLD (make-pos 2 1)) => #true
+;; (valid-move? MOVE-TEST-WORLD (make-pos 0 1)) => #false
+(check-expect (valid-move? MOVE-TEST-WORLD (make-pos 2 1)) #true)
+(check-expect (valid-move? MOVE-TEST-WORLD (make-pos 0 1)) #false)
+(check-expect (valid-move? MOVE-TEST-WORLD (make-pos 3 1)) #false)
+
+(define (valid-move? w p)
+  (and (in-grid? (world-grid w) p)
+       (not (string=? (tile-at (world-grid w) p) WALL))))
+
+
+;; move-player : World KeyEvent -> World
+;; purpose: move the player by arrow key if target tile is valid.
+;; If the key is not an arrow key or target is invalid, return unchanged world.
+;; examples:
+;; (move-player MOVE-TEST-WORLD "right") => MOVE-TEST-WORLD-RIGHT
+;; (move-player MOVE-TEST-WORLD "left")  => MOVE-TEST-WORLD
+(check-expect (move-player MOVE-TEST-WORLD "right") MOVE-TEST-WORLD-RIGHT)
+(check-expect (move-player MOVE-TEST-WORLD "left") MOVE-TEST-WORLD)
+(check-expect (move-player MOVE-TEST-WORLD "up") MOVE-TEST-WORLD)
+(check-expect (move-player MOVE-TEST-WORLD "a") MOVE-TEST-WORLD)
+
+(define (move-player w ke)
+  (cond
+    [(not (movement-key? ke)) w]
+    [else
+     (local [(define old-player (world-player w))
+             (define target-pos (next-pos (player-pos old-player) ke))]
+       (if (valid-move? w target-pos)
+           (make-world (world-grid w)
+                       (make-player target-pos
+                                    (player-keys old-player))
+                       (world-status w))
+           w))]))
