@@ -3,6 +3,8 @@
 (require 2htdp/image)
 (require 2htdp/universe)
 
+;;------ TUTORIAL 1
+
 ;; For now this file is only the data core:
 ;; no movement, no rendering, no on-key logic yet.
 
@@ -174,37 +176,40 @@
 ;; World -> ...
 ;; template for functions consuming World
 ;; Basic top-level template for world functions.
+;; FP note: a World value is immutable.
+;; Every game step returns a NEW World instead of modifying old state.
 (define (world-template w)
   (... (grid-template (world-grid w))
        (player-template (world-player w))
        (status-template (world-status w))))
 
-
+;;------ TUTORIAL 2
 
 ;; Movement
 
 
 ;; Movement test data:
 ;; The player starts at (1,1), can move right to floor, and cannot move into walls.
-(define MOVE-TEST-GRID
+(define MOVE-GRID
   (list
    (list WALL WALL WALL)
    (list WALL FLOOR FLOOR)
    (list WALL WALL WALL)))
 
-(define MOVE-TEST-WORLD
-  (make-world MOVE-TEST-GRID
+(define MOVE-WORLD
+  (make-world MOVE-GRID
               (make-player (make-pos 1 1) 0)
               PLAYING))
 
-(define MOVE-TEST-WORLD-RIGHT
-  (make-world MOVE-TEST-GRID
+(define MOVE-WORLD-RIGHT
+  (make-world MOVE-GRID
               (make-player (make-pos 2 1) 0)
               PLAYING))
 
 
 ;; movement-key? : KeyEvent -> Boolean
 ;; purpose: check if a key event is one of the 4 movement arrows.
+;; FP note: pure predicate, no state changes.
 ;; examples:
 ;; (movement-key? "left")  => #true
 ;; (movement-key? "a")     => #false
@@ -222,6 +227,7 @@
 ;; next-pos : Pos KeyEvent -> Pos
 ;; purpose: produce the next position from a position and arrow key.
 ;; If the key is not an arrow key, return the same position.
+;; FP note: this is a small deterministic transformation Pos -> Pos.
 ;; examples:
 ;; (next-pos (make-pos 2 2) "up")    => (make-pos 2 1)
 ;; (next-pos (make-pos 2 2) "right") => (make-pos 3 2)
@@ -242,12 +248,13 @@
 
 ;; in-grid? : Grid Pos -> Boolean
 ;; purpose: check whether a position is inside grid bounds.
+;; FP note: read-only function over Grid and Pos.
 ;; examples:
-;; (in-grid? MOVE-TEST-GRID (make-pos 2 1)) => #true
-;; (in-grid? MOVE-TEST-GRID (make-pos 3 1)) => #false
-(check-expect (in-grid? MOVE-TEST-GRID (make-pos 2 1)) #true)
-(check-expect (in-grid? MOVE-TEST-GRID (make-pos 3 1)) #false)
-(check-expect (in-grid? MOVE-TEST-GRID (make-pos -1 1)) #false)
+;; (in-grid? MOVE-GRID(make-pos 2 1)) => #true
+;; (in-grid? MOVE-GRID(make-pos 3 1)) => #false
+(check-expect (in-grid? MOVE-GRID(make-pos 2 1)) #true)
+(check-expect (in-grid? MOVE-GRID(make-pos 3 1)) #false)
+(check-expect (in-grid? MOVE-GRID(make-pos -1 1)) #false)
 
 (define (in-grid? g p)
   (and (not (empty? g))
@@ -259,6 +266,7 @@
 
 ;; nth-item : [NEList-of X] Natural -> X
 ;; purpose: return the n-th item (0-based) from a non-empty list.
+;; FP note: structural recursion on lists.
 ;; examples:
 ;; (nth-item (list "a" "b" "c") 0) => "a"
 ;; (nth-item (list "a" "b" "c") 2) => "c"
@@ -273,11 +281,12 @@
 
 ;; tile-at : Grid Pos -> Tile
 ;; purpose: get the tile value at a position.
+;; FP note: composition of pure helpers (nth-item + field accessors).
 ;; examples:
-;; (tile-at MOVE-TEST-GRID (make-pos 1 1)) => FLOOR
-;; (tile-at MOVE-TEST-GRID (make-pos 0 1)) => WALL
-(check-expect (tile-at MOVE-TEST-GRID (make-pos 1 1)) FLOOR)
-(check-expect (tile-at MOVE-TEST-GRID (make-pos 0 1)) WALL)
+;; (tile-at MOVE-GRID(make-pos 1 1)) => FLOOR
+;; (tile-at MOVE-GRID(make-pos 0 1)) => WALL
+(check-expect (tile-at MOVE-GRID(make-pos 1 1)) FLOOR)
+(check-expect (tile-at MOVE-GRID(make-pos 0 1)) WALL)
 
 (define (tile-at g p)
   (nth-item (nth-item g (pos-y p)) (pos-x p)))
@@ -285,28 +294,41 @@
 
 ;; valid-move? : World Pos -> Boolean
 ;; purpose: check if a move target is inside the grid and not a wall tile.
+;; FP note: this function only checks constraints, no mutation.
 ;; examples:
-;; (valid-move? MOVE-TEST-WORLD (make-pos 2 1)) => #true
-;; (valid-move? MOVE-TEST-WORLD (make-pos 0 1)) => #false
-(check-expect (valid-move? MOVE-TEST-WORLD (make-pos 2 1)) #true)
-(check-expect (valid-move? MOVE-TEST-WORLD (make-pos 0 1)) #false)
-(check-expect (valid-move? MOVE-TEST-WORLD (make-pos 3 1)) #false)
+;; (valid-move? MOVE-WORLD (make-pos 2 1)) => #true
+;; (valid-move? MOVE-WORLD (make-pos 0 1)) => #false
+(check-expect (valid-move? MOVE-WORLD (make-pos 2 1)) #true)
+(check-expect (valid-move? MOVE-WORLD (make-pos 0 1)) #false)
+(check-expect (valid-move? MOVE-WORLD (make-pos 3 1)) #false)
+
+;; passable-tile? : Player Tile -> Boolean
+;; purpose: decide if player can stand on a tile with current key count.
+;; FP note: business rule as a small pure decision function.
+(define (passable-tile? p t)
+  (cond
+    [(string=? t WALL) #false]
+    [(string=? t DOOR) (>= (player-keys p) 1)]
+    [else #true]))
 
 (define (valid-move? w p)
   (and (in-grid? (world-grid w) p)
-       (not (string=? (tile-at (world-grid w) p) WALL))))
+       (passable-tile? (world-player w)
+                       (tile-at (world-grid w) p))))
 
 
 ;; move-player : World KeyEvent -> World
 ;; purpose: move the player by arrow key if target tile is valid.
 ;; If the key is not an arrow key or target is invalid, return unchanged world.
+;; FP note: input world is never changed; result is either old world
+;; or a newly constructed world with updated player position.
 ;; examples:
-;; (move-player MOVE-TEST-WORLD "right") => MOVE-TEST-WORLD-RIGHT
-;; (move-player MOVE-TEST-WORLD "left")  => MOVE-TEST-WORLD
-(check-expect (move-player MOVE-TEST-WORLD "right") MOVE-TEST-WORLD-RIGHT)
-(check-expect (move-player MOVE-TEST-WORLD "left") MOVE-TEST-WORLD)
-(check-expect (move-player MOVE-TEST-WORLD "up") MOVE-TEST-WORLD)
-(check-expect (move-player MOVE-TEST-WORLD "a") MOVE-TEST-WORLD)
+;; (move-player MOVE-WORLD "right") => MOVE-WORLD-RIGHT
+;; (move-player MOVE-WORLD "left")  => MOVE-WORLD
+(check-expect (move-player MOVE-WORLD "right") MOVE-WORLD-RIGHT)
+(check-expect (move-player MOVE-WORLD "left") MOVE-WORLD)
+(check-expect (move-player MOVE-WORLD "up") MOVE-WORLD)
+(check-expect (move-player MOVE-WORLD "a") MOVE-WORLD)
 
 (define (move-player w ke)
   (cond
@@ -320,3 +342,132 @@
                                     (player-keys old-player))
                        (world-status w))
            w))]))
+
+;;------ TUTORIAL 3
+
+;; Interaction
+
+;; replace-at : [NEList-of X] Natural X -> [NEList-of X]
+;; purpose: create a new list where index n is replaced with item.
+;; FP note: this is immutable list update.
+;; We rebuild only the needed prefix, then share tail structure.
+;; examples:
+;; (replace-at (list "a" "b" "c") 1 "x") => (list "a" "x" "c")
+;; (replace-at (list 10 20 30) 0 5) => (list 5 20 30)
+(check-expect (replace-at (list "a" "b" "c") 1 "x")
+              (list "a" "x" "c"))
+(check-expect (replace-at (list 10 20 30) 0 5)
+              (list 5 20 30))
+
+(define (replace-at l n item)
+  (cond
+    [(zero? n) (cons item (rest l))]
+    [else (cons (first l)
+                (replace-at (rest l) (sub1 n) item))]))
+
+
+;; set-tile : Grid Pos Tile -> Grid
+;; purpose: produce a new grid where tile at position p is replaced with tile.
+;; FP note: two-level immutable update:
+;; 1) update the row, 2) update the grid with that new row.
+;; examples:
+;; (tile-at (set-tile MOVE-GRID (make-pos 1 1) KEY) (make-pos 1 1)) => KEY
+;; (tile-at (set-tile MOVE-GRID (make-pos 2 1) WALL) (make-pos 2 1)) => WALL
+(check-expect (tile-at (set-tile MOVE-GRID (make-pos 1 1) KEY)
+                       (make-pos 1 1))
+              KEY)
+(check-expect (tile-at (set-tile MOVE-GRID (make-pos 2 1) WALL)
+                       (make-pos 2 1))
+              WALL)
+
+(define (set-tile g p tile)
+  (replace-at g
+              (pos-y p)
+              (replace-at (nth-item g (pos-y p))
+                          (pos-x p)
+                          tile)))
+
+
+;; Interaction test data:
+(define INTERACT-GRID
+  (list
+   (list FLOOR KEY DOOR EXIT)))
+
+(define INTERACT-WORLD-FLOOR
+  (make-world INTERACT-GRID
+              (make-player (make-pos 0 0) 0)
+              PLAYING))
+
+(define INTERACT-WORLD-KEY
+  (make-world INTERACT-GRID
+              (make-player (make-pos 1 0) 0)
+              PLAYING))
+
+(define INTERACT-WORLD-DOOR-WITH-KEY
+  (make-world INTERACT-GRID
+              (make-player (make-pos 2 0) 2)
+              PLAYING))
+
+(define INTERACT-WORLD-DOOR-NO-KEY
+  (make-world INTERACT-GRID
+              (make-player (make-pos 2 0) 0)
+              PLAYING))
+
+(define INTERACT-WORLD-EXIT
+  (make-world INTERACT-GRID
+              (make-player (make-pos 3 0) 0)
+              PLAYING))
+
+
+;; handle-tile : World -> World
+;; purpose: apply tile interaction at player's current position.
+;; KEY: add one key and replace tile with FLOOR.
+;; DOOR: consume one key if player has one, otherwise unchanged.
+;; EXIT: set world status to WON.
+;; FLOOR: unchanged.
+;; FP note: tile interaction is expressed as case analysis over Tile,
+;; and each case returns a brand-new World value.
+;; examples:
+;; (handle-tile INTERACT-WORLD-FLOOR) => INTERACT-WORLD-FLOOR
+;; (handle-tile INTERACT-WORLD-EXIT)  => world with WON status
+(check-expect (handle-tile INTERACT-WORLD-FLOOR)
+              INTERACT-WORLD-FLOOR)
+
+(check-expect (handle-tile INTERACT-WORLD-KEY)
+              (make-world (list (list FLOOR FLOOR DOOR EXIT))
+                          (make-player (make-pos 1 0) 1)
+                          PLAYING))
+
+(check-expect (handle-tile INTERACT-WORLD-DOOR-WITH-KEY)
+              (make-world INTERACT-GRID
+                          (make-player (make-pos 2 0) 1)
+                          PLAYING))
+
+(check-expect (handle-tile INTERACT-WORLD-DOOR-NO-KEY)
+              INTERACT-WORLD-DOOR-NO-KEY)
+
+(check-expect (handle-tile INTERACT-WORLD-EXIT)
+              (make-world INTERACT-GRID
+                          (make-player (make-pos 3 0) 0)
+                          WON))
+
+(define (handle-tile w)
+  (local [(define p (world-player w))
+          (define p-pos (player-pos p))
+          (define current (tile-at (world-grid w) p-pos))]
+    (cond
+      [(string=? current KEY)
+       (make-world (set-tile (world-grid w) p-pos FLOOR)
+                   (make-player p-pos (add1 (player-keys p)))
+                   (world-status w))]
+      [(string=? current DOOR)
+       (if (>= (player-keys p) 1)
+           (make-world (world-grid w)
+                       (make-player p-pos (sub1 (player-keys p)))
+                       (world-status w))
+           w)]
+      [(string=? current EXIT)
+       (make-world (world-grid w)
+                   p
+                   WON)]
+      [else w])))
