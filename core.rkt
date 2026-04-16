@@ -369,7 +369,7 @@
 ;; set-tile : Grid Pos Tile -> Grid
 ;; purpose: produce a new grid where tile at position p is replaced with tile.
 ;; FP note: two-level immutable update:
-;; 1) update the row, 2) update the grid with that new row.
+;; update the row, update the grid with that new row.
 ;; examples:
 ;; (tile-at (set-tile MOVE-GRID (make-pos 1 1) KEY) (make-pos 1 1)) => KEY
 ;; (tile-at (set-tile MOVE-GRID (make-pos 2 1) WALL) (make-pos 2 1)) => WALL
