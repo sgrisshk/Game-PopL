@@ -87,6 +87,36 @@
 
 
 
+;; Enemy
+
+
+;; Enemy data: where one enemy stands.
+(define-struct enemy [pos])
+;; An Enemy is (make-enemy Pos)
+;; interpretation: one hostile actor on the grid.
+;; If an enemy has the same position as the player, the player loses.
+
+(define ENEMY-1 (make-enemy (make-pos 2 1)))
+(define ENEMY-2 (make-enemy (make-pos 2 2)))
+
+;; Enemy -> ...
+;; template for functions consuming Enemy
+;; FP note: enemy state is immutable, so movement returns a new Enemy.
+(define (enemy-template e)
+  (... (pos-template (enemy-pos e))))
+
+;; [List-of Enemy] -> ...
+;; template for functions consuming a list of enemies
+;; FP note: structural recursion processes one enemy and recurs on the rest.
+(define (enemies-template enemies)
+  (cond
+    [(empty? enemies) ...]
+    [else
+     (... (enemy-template (first enemies))
+          (enemies-template (rest enemies)))]))
+
+
+
 ;; Grid
 
 
@@ -162,16 +192,16 @@
 
 
 ;; Full snapshot of game state.
-(define-struct world [grid player status])
-;; A World is (make-world Grid Player Status)
+(define-struct world [grid player enemies status])
+;; A World is (make-world Grid Player [List-of Enemy] Status)
 ;; interpretation: complete (immutable) state:
-;; map, player, and current game status.
+;; map, player, enemies, and current game status.
 
 (define WORLD-1
-  (make-world GRID-1 PLAYER-1 PLAYING))
+  (make-world GRID-1 PLAYER-1 empty PLAYING))
 
 (define WORLD-2
-  (make-world GRID-2 PLAYER-2 WON))
+  (make-world GRID-2 PLAYER-2 (list ENEMY-1 ENEMY-2) WON))
 
 ;; World -> ...
 ;; template for functions consuming World
@@ -181,6 +211,7 @@
 (define (world-template w)
   (... (grid-template (world-grid w))
        (player-template (world-player w))
+       (enemies-template (world-enemies w))
        (status-template (world-status w))))
 
 ;;------ TUTORIAL 2
@@ -199,11 +230,13 @@
 (define MOVE-WORLD
   (make-world MOVE-GRID
               (make-player (make-pos 1 1) 0)
+              empty
               PLAYING))
 
 (define MOVE-WORLD-RIGHT
   (make-world MOVE-GRID
               (make-player (make-pos 2 1) 0)
+              empty
               PLAYING))
 
 
@@ -340,6 +373,7 @@
            (make-world (world-grid w)
                        (make-player target-pos
                                     (player-keys old-player))
+                       (world-enemies w)
                        (world-status w))
            w))]))
 
@@ -396,26 +430,31 @@
 (define INTERACT-WORLD-FLOOR
   (make-world INTERACT-GRID
               (make-player (make-pos 0 0) 0)
+              empty
               PLAYING))
 
 (define INTERACT-WORLD-KEY
   (make-world INTERACT-GRID
               (make-player (make-pos 1 0) 0)
+              empty
               PLAYING))
 
 (define INTERACT-WORLD-DOOR-WITH-KEY
   (make-world INTERACT-GRID
               (make-player (make-pos 2 0) 2)
+              empty
               PLAYING))
 
 (define INTERACT-WORLD-DOOR-NO-KEY
   (make-world INTERACT-GRID
               (make-player (make-pos 2 0) 0)
+              empty
               PLAYING))
 
 (define INTERACT-WORLD-EXIT
   (make-world INTERACT-GRID
               (make-player (make-pos 3 0) 0)
+              empty
               PLAYING))
 
 
@@ -436,11 +475,13 @@
 (check-expect (handle-tile INTERACT-WORLD-KEY)
               (make-world (list (list FLOOR FLOOR DOOR EXIT))
                           (make-player (make-pos 1 0) 1)
+                          empty
                           PLAYING))
 
 (check-expect (handle-tile INTERACT-WORLD-DOOR-WITH-KEY)
               (make-world INTERACT-GRID
                           (make-player (make-pos 2 0) 1)
+                          empty
                           PLAYING))
 
 (check-expect (handle-tile INTERACT-WORLD-DOOR-NO-KEY)
@@ -449,6 +490,7 @@
 (check-expect (handle-tile INTERACT-WORLD-EXIT)
               (make-world INTERACT-GRID
                           (make-player (make-pos 3 0) 0)
+                          empty
                           WON))
 
 (define (handle-tile w)
@@ -459,15 +501,241 @@
       [(string=? current KEY)
        (make-world (set-tile (world-grid w) p-pos FLOOR)
                    (make-player p-pos (add1 (player-keys p)))
+                   (world-enemies w)
                    (world-status w))]
       [(string=? current DOOR)
        (if (>= (player-keys p) 1)
            (make-world (world-grid w)
                        (make-player p-pos (sub1 (player-keys p)))
+                       (world-enemies w)
                        (world-status w))
            w)]
       [(string=? current EXIT)
        (make-world (world-grid w)
                    p
+                   (world-enemies w)
                    WON)]
       [else w])))
+
+;;------ TUTORIAL 4
+
+;; Enemies
+
+;; Enemy movement test data:
+;; The enemy pattern is deterministic:
+;; try to move right first; if blocked, try left; if blocked again, stay.
+;; FP note: deterministic movement keeps tests pure and reproducible.
+(define ENEMY-GRID
+  (list
+   (list WALL WALL WALL WALL)
+   (list WALL FLOOR FLOOR WALL)
+   (list WALL FLOOR WALL WALL)))
+
+(define ENEMY-WORLD-MOVE
+  (make-world ENEMY-GRID
+              (make-player (make-pos 1 2) 0)
+              (list (make-enemy (make-pos 1 1)))
+              PLAYING))
+
+(define ENEMY-WORLD-MOVED
+  (make-world ENEMY-GRID
+              (make-player (make-pos 1 2) 0)
+              (list (make-enemy (make-pos 2 1)))
+              PLAYING))
+
+(define ENEMY-WORLD-WALL
+  (make-world ENEMY-GRID
+              (make-player (make-pos 2 1) 0)
+              (list (make-enemy (make-pos 1 2)))
+              PLAYING))
+
+(define ENEMY-WORLD-WALL-STAY
+  (make-world ENEMY-GRID
+              (make-player (make-pos 2 1) 0)
+              (list (make-enemy (make-pos 1 2)))
+              PLAYING))
+
+(define ENEMY-WORLD-COLLISION
+  (make-world ENEMY-GRID
+              (make-player (make-pos 2 1) 0)
+              (list (make-enemy (make-pos 1 1)))
+              PLAYING))
+
+(define ENEMY-WORLD-COLLISION-LOST
+  (make-world ENEMY-GRID
+              (make-player (make-pos 2 1) 0)
+              (list (make-enemy (make-pos 2 1)))
+              LOST))
+
+(define ENEMY-WORLD-START-COLLISION
+  (make-world ENEMY-GRID
+              (make-player (make-pos 1 1) 0)
+              (list (make-enemy (make-pos 1 1)))
+              PLAYING))
+
+(define ENEMY-WORLD-START-COLLISION-LOST
+  (make-world ENEMY-GRID
+              (make-player (make-pos 1 1) 0)
+              (list (make-enemy (make-pos 1 1)))
+              LOST))
+
+
+;; pos=? : Pos Pos -> Boolean
+;; purpose: decide whether two positions have the same coordinates.
+;; FP note: pure equality over immutable structs.
+(check-expect (pos=? (make-pos 1 2) (make-pos 1 2)) #true)
+(check-expect (pos=? (make-pos 1 2) (make-pos 2 1)) #false)
+
+(define (pos=? p1 p2)
+  (and (= (pos-x p1) (pos-x p2))
+       (= (pos-y p1) (pos-y p2))))
+
+
+;; enemy-valid-move? : Grid Pos -> Boolean
+;; purpose: check if an enemy may occupy a position.
+;; Rule: enemies must stay inside the grid and cannot move through WALL.
+;; FP note: this function reads Grid and Pos only; it has no side effects.
+(check-expect (enemy-valid-move? ENEMY-GRID (make-pos 2 1)) #true)
+(check-expect (enemy-valid-move? ENEMY-GRID (make-pos 3 1)) #false)
+(check-expect (enemy-valid-move? ENEMY-GRID (make-pos -1 1)) #false)
+
+(define (enemy-valid-move? g p)
+  (and (in-grid? g p)
+       (not (string=? (tile-at g p) WALL))))
+
+
+;; move-enemy : Grid Enemy -> Enemy
+;; purpose: move one enemy using a simple deterministic pattern.
+;; Pattern: right if possible, otherwise left if possible, otherwise stay.
+;; FP note: no Enemy is changed in place; this returns a new Enemy value.
+(check-expect (move-enemy ENEMY-GRID (make-enemy (make-pos 1 1)))
+              (make-enemy (make-pos 2 1)))
+(check-expect (move-enemy ENEMY-GRID (make-enemy (make-pos 1 2)))
+              (make-enemy (make-pos 1 2)))
+
+(define (move-enemy g e)
+  (local [(define current-pos (enemy-pos e))
+          (define right-pos (next-pos current-pos "right"))
+          (define left-pos (next-pos current-pos "left"))]
+    (cond
+      [(enemy-valid-move? g right-pos) (make-enemy right-pos)]
+      [(enemy-valid-move? g left-pos) (make-enemy left-pos)]
+      [else e])))
+
+
+;; move-enemies : Grid [List-of Enemy] -> [List-of Enemy]
+;; purpose: move every enemy in a list.
+;; FP note: structural recursion builds a fresh list of fresh Enemy values.
+(check-expect (move-enemies ENEMY-GRID
+                            (list (make-enemy (make-pos 1 1))
+                                  (make-enemy (make-pos 1 2))))
+              (list (make-enemy (make-pos 2 1))
+                    (make-enemy (make-pos 1 2))))
+
+(define (move-enemies g enemies)
+  (cond
+    [(empty? enemies) empty]
+    [else
+     (cons (move-enemy g (first enemies))
+           (move-enemies g (rest enemies)))]))
+
+
+;; enemy-at? : Pos Enemy -> Boolean
+;; purpose: decide whether one enemy occupies a position.
+;; FP note: small pure predicate used by the list collision check.
+(check-expect (enemy-at? (make-pos 2 1) (make-enemy (make-pos 2 1))) #true)
+(check-expect (enemy-at? (make-pos 2 1) (make-enemy (make-pos 1 1))) #false)
+
+(define (enemy-at? p e)
+  (pos=? p (enemy-pos e)))
+
+
+;; any-enemy-at? : Pos [List-of Enemy] -> Boolean
+;; purpose: check whether any enemy occupies a position.
+;; FP note: structural recursion over enemies; no mutation or early state update.
+(check-expect (any-enemy-at? (make-pos 2 1)
+                             (list (make-enemy (make-pos 1 1))
+                                   (make-enemy (make-pos 2 1))))
+              #true)
+(check-expect (any-enemy-at? (make-pos 2 1)
+                             (list (make-enemy (make-pos 1 1))))
+              #false)
+
+(define (any-enemy-at? p enemies)
+  (cond
+    [(empty? enemies) #false]
+    [else
+     (or (enemy-at? p (first enemies))
+         (any-enemy-at? p (rest enemies)))]))
+
+
+;; world-with-enemies : World [List-of Enemy] -> World
+;; purpose: rebuild a world with a new enemy list and the same grid/player/status.
+;; FP note: helper names the immutable update pattern for World.
+(define (world-with-enemies w enemies)
+  (make-world (world-grid w)
+              (world-player w)
+              enemies
+              (world-status w)))
+
+
+;; world-with-status : World Status -> World
+;; purpose: rebuild a world with a new status and the same grid/player/enemies.
+;; FP note: changing status means constructing a replacement World.
+(define (world-with-status w status)
+  (make-world (world-grid w)
+              (world-player w)
+              (world-enemies w)
+              status))
+
+
+;; collide-with-player? : World -> Boolean
+;; purpose: check whether any enemy has the same position as the player.
+;; FP note: this is a pure query over a complete World snapshot.
+(check-expect (collide-with-player? ENEMY-WORLD-COLLISION-LOST) #true)
+(check-expect (collide-with-player? ENEMY-WORLD-MOVE) #false)
+
+(define (collide-with-player? w)
+  (any-enemy-at? (player-pos (world-player w))
+                 (world-enemies w)))
+
+
+;; lose-if-collision : World -> World
+;; purpose: set status to LOST if player and enemy occupy the same position.
+;; FP note: returns either the original World or a rebuilt World with LOST status.
+(check-expect (lose-if-collision ENEMY-WORLD-START-COLLISION)
+              ENEMY-WORLD-START-COLLISION-LOST)
+(check-expect (lose-if-collision ENEMY-WORLD-MOVE)
+              ENEMY-WORLD-MOVE)
+
+(define (lose-if-collision w)
+  (if (collide-with-player? w)
+      (world-with-status w LOST)
+      w))
+
+
+;; update-enemies : World -> World
+;; purpose: move all enemies and apply enemy-player collision.
+;; Rules:
+;; - enemies move deterministically, right first then left;
+;; - enemies stay within the grid;
+;; - enemies cannot move through walls;
+;; - if any enemy occupies the player's position, world status becomes LOST.
+;; FP note: this function is a World -> World transformation.
+;; It never mutates the grid, player, enemy list, or status in place.
+(check-expect (update-enemies ENEMY-WORLD-MOVE)
+              ENEMY-WORLD-MOVED)
+(check-expect (update-enemies ENEMY-WORLD-WALL)
+              ENEMY-WORLD-WALL-STAY)
+(check-expect (update-enemies ENEMY-WORLD-COLLISION)
+              ENEMY-WORLD-COLLISION-LOST)
+(check-expect (update-enemies ENEMY-WORLD-START-COLLISION)
+              ENEMY-WORLD-START-COLLISION-LOST)
+
+(define (update-enemies w)
+  (if (collide-with-player? w)
+      (world-with-status w LOST)
+      (lose-if-collision
+       (world-with-enemies w
+                           (move-enemies (world-grid w)
+                                         (world-enemies w)))))))
