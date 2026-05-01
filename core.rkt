@@ -738,4 +738,140 @@
       (lose-if-collision
        (world-with-enemies w
                            (move-enemies (world-grid w)
-                                         (world-enemies w)))))))
+                                         (world-enemies w))))))
+
+;;------ TUTORIAL 5
+
+;; Rendering
+
+
+(define TILE-SIZE 40)
+(define HALF-TILE (/ TILE-SIZE 2))
+(define ENTITY-RADIUS (quotient TILE-SIZE 3))
+
+(define PLAYER-ICON (circle ENTITY-RADIUS "solid" "royal blue"))
+(define ENEMY-ICON  (circle ENTITY-RADIUS "solid" "crimson"))
+
+
+;; render-tile : Tile -> Image
+;; purpose: produce a TILE-SIZE x TILE-SIZE image for one tile type.
+;; FP note: pure; one call per tile, no state.
+(check-expect (render-tile WALL)  (square TILE-SIZE "solid" "dark gray"))
+(check-expect (render-tile FLOOR) (square TILE-SIZE "solid" "gainsboro"))
+
+(define (render-tile t)
+  (cond
+    [(string=? t WALL)
+     (square TILE-SIZE "solid" "dark gray")]
+    [(string=? t FLOOR)
+     (square TILE-SIZE "solid" "gainsboro")]
+    [(string=? t KEY)
+     (overlay (circle (quotient TILE-SIZE 4) "solid" "gold")
+              (square TILE-SIZE "solid" "gainsboro"))]
+    [(string=? t DOOR)
+     (overlay (rectangle (quotient (* TILE-SIZE 3) 5)
+                         (quotient (* TILE-SIZE 4) 5)
+                         "solid" "saddlebrown")
+              (square TILE-SIZE "solid" "peru"))]
+    [(string=? t EXIT)
+     (overlay (triangle (quotient TILE-SIZE 2) "solid" "white")
+              (square TILE-SIZE "solid" "lime green"))]))
+
+
+;; render-row : [List-of Tile] -> Image
+;; purpose: join tile images horizontally into one row strip.
+;; FP note: structural recursion over list; returns a new image per row.
+(check-expect (render-row empty) empty-image)
+(check-expect (render-row (list WALL))
+              (beside (render-tile WALL) empty-image))
+
+(define (render-row row)
+  (cond
+    [(empty? row) empty-image]
+    [else (beside (render-tile (first row))
+                  (render-row (rest row)))]))
+
+
+;; render-grid : Grid -> Image
+;; purpose: stack all row images vertically to form the dungeon background.
+;; FP note: structural recursion over the outer list.
+(check-expect (render-grid empty) empty-image)
+(check-expect (render-grid (list (list WALL)))
+              (above (render-row (list WALL)) empty-image))
+
+(define (render-grid g)
+  (cond
+    [(empty? g) empty-image]
+    [else (above (render-row (first g))
+                 (render-grid (rest g)))]))
+
+
+;; tile->pixel-center-x : Integer -> Number
+;; purpose: pixel x-coordinate of the center of grid column col.
+(check-expect (tile->pixel-center-x 0) HALF-TILE)
+(check-expect (tile->pixel-center-x 2) (+ (* 2 TILE-SIZE) HALF-TILE))
+
+(define (tile->pixel-center-x col)
+  (+ (* col TILE-SIZE) HALF-TILE))
+
+
+;; tile->pixel-center-y : Integer -> Number
+;; purpose: pixel y-coordinate of the center of grid row row-idx.
+(check-expect (tile->pixel-center-y 0) HALF-TILE)
+(check-expect (tile->pixel-center-y 1) (+ TILE-SIZE HALF-TILE))
+
+(define (tile->pixel-center-y row-idx)
+  (+ (* row-idx TILE-SIZE) HALF-TILE))
+
+
+;; place-at-pos : Image Pos Image -> Image
+;; purpose: center icon on the tile at pos, drawn over bg.
+;; FP note: place-image is a pure 2htdp/image function; no mutation.
+(define (place-at-pos icon p bg)
+  (place-image icon
+               (tile->pixel-center-x (pos-x p))
+               (tile->pixel-center-y (pos-y p))
+               bg))
+
+
+;; render-enemies : [List-of Enemy] Image -> Image
+;; purpose: draw each enemy icon onto bg at its grid position.
+;; FP note: structural recursion; each step returns a new image.
+(check-expect (render-enemies empty (render-grid GRID-1))
+              (render-grid GRID-1))
+
+(define (render-enemies enemies bg)
+  (cond
+    [(empty? enemies) bg]
+    [else
+     (render-enemies (rest enemies)
+                     (place-at-pos ENEMY-ICON
+                                   (enemy-pos (first enemies))
+                                   bg))]))
+
+
+;; render-status : Status Image -> Image
+;; purpose: overlay a message on img for WON or LOST; return img unchanged for PLAYING.
+(check-expect (render-status PLAYING (square 10 "solid" "white"))
+              (square 10 "solid" "white"))
+
+(define (render-status s img)
+  (cond
+    [(string=? s WON)
+     (overlay (text "YOU WIN!" 24 "white") img)]
+    [(string=? s LOST)
+     (overlay (text "GAME OVER" 24 "white") img)]
+    [else img]))
+
+
+;; render : World -> Image
+;; purpose: convert a complete World snapshot into a single image.
+;; Layers bottom to top: grid, enemies, player, status overlay.
+;; FP note: functional shell; no mutation anywhere in the call tree.
+(define (render w)
+  (render-status
+   (world-status w)
+   (place-at-pos PLAYER-ICON
+                 (player-pos (world-player w))
+                 (render-enemies (world-enemies w)
+                                 (render-grid (world-grid w)))))))
