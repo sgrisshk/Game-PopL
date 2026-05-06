@@ -875,3 +875,74 @@
                  (player-pos (world-player w))
                  (render-enemies (world-enemies w)
                                  (render-grid (world-grid w)))))))
+
+;;------ FINAL GAME
+
+;; Initial world
+
+(define INITIAL-GRID
+  (list
+   (list WALL WALL WALL WALL WALL WALL WALL)
+   (list WALL FLOOR KEY FLOOR FLOOR EXIT WALL)
+   (list WALL FLOOR WALL WALL FLOOR WALL WALL)
+   (list WALL FLOOR FLOOR DOOR FLOOR FLOOR WALL)
+   (list WALL WALL WALL WALL WALL WALL WALL)))
+
+(define INITIAL-PLAYER
+  (make-player (make-pos 1 1) 0))
+
+(define INITIAL-ENEMIES
+  (list (make-enemy (make-pos 1 3))))
+
+(define INITIAL-WORLD
+  (make-world INITIAL-GRID
+              INITIAL-PLAYER
+              INITIAL-ENEMIES
+              PLAYING))
+
+
+;; playing? : World -> Boolean
+;; purpose: check whether the game should still accept updates.
+;; FP note: pure status query.
+(define (playing? w)
+  (string=? (world-status w) PLAYING))
+
+
+;; stopped? : World -> Boolean
+;; purpose: stop big-bang after the player has won or lost.
+;; FP note: pure stop condition.
+(define (stopped? w)
+  (not (playing? w)))
+
+
+;; update-player : World KeyEvent -> World
+;; purpose: process one key event through the functional core.
+;; FP note: big-bang calls this, but all game rules remain pure.
+(define (update-player w ke)
+  (if (playing? w)
+      (lose-if-collision
+       (handle-tile
+        (move-player w ke)))
+      w))
+
+
+;; update-world-enemies : World -> World
+;; purpose: process one clock tick through the functional core.
+;; FP note: this only delegates to the pure enemy update.
+(define (update-world-enemies w)
+  (if (playing? w)
+      (update-enemies w)
+      w))
+
+
+;; start-game : World -> World
+;; purpose: imperative shell around the pure functional core.
+(define (start-game initial-world)
+  (big-bang initial-world
+    [on-key update-player]
+    [on-tick update-world-enemies]
+    [to-draw render]
+    [stop-when stopped? render]))
+
+
+(start-game INITIAL-WORLD)
